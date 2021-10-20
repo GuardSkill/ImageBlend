@@ -33,3 +33,17 @@ images/car_result_video/
 0.00002
 --inpaint_bg
 1
+
+--src_image
+/Disk1/XR/xr_car
+--dst_image
+/Disk1/XR/xr_car
+--mask_image
+/Disk1/XR/car/label_mask.png
+--result_folder
+images/car_result_video_new_mask_6e_6/
+--color_weight
+6e-6
+--inpaint_bg
+1
+
