@@ -53,43 +53,52 @@ def gradient_feature(im, color_feature):
     return result
 
 
-def fft2(K, size, dtype):
+def fft2(K, size):
     w, h = size
     # param = torch.fft(K,signal_ndim=1)      #torch 1.4 错，这是复数到复数
-    param = torch.rfft(K, signal_ndim=1)  # torch 1.4
+    # param = torch.rfft(K, signal_ndim=1,onesided=False)  # torch 1.4
     # param = np.fft.fft2(K)
-    # param = torch.fft.fft2(K)    #torch 1.1  1.9
+    param = torch.fft.fft2(K)    #torch 1.1  1.9
     param = torch.real(param[0:w, 0:h])
 
     return param
 
 
-def laplacian_param_torch(size, dtype):
+def laplacian_param_torch(size, device):
     w, h = size
-    K = torch.zeros((2 * w, 2 * h)).to(dtype)
+    K = torch.zeros((2 * w, 2 * h)).cuda()
 
-    laplacian_k = torch.tensor([[0, -1, 0], [-1, 4, -1], [0, -1, 0]])
+    laplacian_k = torch.tensor([[0, -1, 0], [-1, 4, -1], [0, -1, 0]]).cuda()
     kw, kh = laplacian_k.shape
     K[:kw, :kh] = laplacian_k
 
     K = torch.roll(K, -(kw // 2), 0)
     K = torch.roll(K, -(kh // 2), 1)
 
-    return fft2(K, size, dtype)
+    return fft2(K, size)
 
 
-def gaussian_param_torch(size, dtype, sigma):
+def gaussian_param_torch(size, sigma,device):
     w, h = size
-    K = torch.zeros((2 * w, 2 * h))
+    K = torch.zeros((2 * w, 2 * h)).cuda()
 
-    K[1, 1] = 1
-    g = GaussianSmoothing(channels=1, kernel_size=3, sigma=sigma)
-    K[:3, :3] = g(K[:3, :3].unsqueeze(dim=0).unsqueeze(dim=0))[0][0]
+    # K[1, 1] = 1
+    # g = GaussianSmoothing(channels=1, kernel_size=3, sigma=sigma).cuda()
+    # K[:3, :3] = g(K[:3, :3].unsqueeze(dim=0).unsqueeze(dim=0))[0][0]
+
+    # K = torch.zeros((2 * w, 2 * h)).cuda()
+    # K[1, 1] = 1
+    # from torchvision import transforms
+    # T_guassian=transforms.GaussianBlur(kernel_size=(3,3), sigma=(sigma,sigma))
+    # K[:3, :3] = T_guassian(K[:3, :3].unsqueeze(dim=0).unsqueeze(dim=0))[0][0]
+    K[:3, :3] =torch.tensor([[0.01133, 0.08373, 0.01133],
+    [0.08373, 0.61869, 0.08373],
+    [0.01133, 0.08373, 0.01133]])
 
     K = torch.roll(K, -1, 0)
     K = torch.roll(K, -1, 1)
 
-    return fft2(K, size, dtype)
+    return fft2(K, size)
 
 
 def dct2(x, norm='ortho'):
@@ -128,10 +137,17 @@ def run_GP_editing(src_im, dst_im, mask_im, bg_for_color, color_weight, sigma, g
     print('T_min', time.time() - T_min)
     size = feature.shape[-3:-1]
     dtype=float
-    param_l = laplacian_param(size, dtype)  # 拉普拉斯的傅里叶变换
-    param_g = gaussian_param(size, dtype, sigma)
-    param_l = torch.from_numpy(param_l).cuda()
-    param_g = torch.from_numpy(param_g).cuda()
+
+
+    # param_l = laplacian_param(size, dtype)  # 拉普拉斯的傅里叶变换
+    # param_g = gaussian_param(size, dtype, sigma)
+    # param_l = torch.from_numpy(param_l).cuda()
+    # param_g = torch.from_numpy(param_g).cuda()
+
+    T_init = time.time()
+    param_l = laplacian_param_torch(size, 'cuda:0')
+    param_g = gaussian_param_torch(size, sigma, 'cuda:0')
+    print('T_init', time.time() - T_init)
 
     gan_im = gaussian_poisson_editing(feature, param_l, param_g, color_weight=color_weight)
 
@@ -139,20 +155,6 @@ def run_GP_editing(src_im, dst_im, mask_im, bg_for_color, color_weight, sigma, g
 
     return gan_im
 
-
-def laplacian_pyramid(im, max_level, image_size, smooth_sigma):
-    im_pyramid = [im]
-    diff_pyramid = []
-    for i in range(max_level - 1, -1, -1):
-        smoothed = gaussian(im_pyramid[-1], smooth_sigma, multichannel=True)
-        diff_pyramid.append(im_pyramid[-1] - smoothed)
-        smoothed = ndarray_resize(smoothed, (image_size * 2 ** i, image_size * 2 ** i))
-        im_pyramid.append(smoothed)
-
-    im_pyramid.reverse()
-    diff_pyramid.reverse()
-
-    return im_pyramid, diff_pyramid
 
 
 @torch.no_grad()
