@@ -1,4 +1,6 @@
 import math
+import time
+
 import numpy as np
 from scipy.fftpack import dct, idct
 from scipy.ndimage import correlate
@@ -61,7 +63,6 @@ def fft2(K, size, dtype):
     w, h = size
     param = np.fft.fft2(K)
     param = np.real(param[0:w, 0:h])
-
     return param.astype(dtype)
 
 
@@ -110,6 +111,8 @@ def gaussian_poisson_editing(X, param_l, param_g, color_weight=1, eps=1e-12):
     param[(param < 0) & (param > -eps)] = -eps
 
     Y = np.zeros(X.shape[:3])
+
+
     for i in range(3):
         Xdct = dct2(X[:, :, i, 0])
         Ydct = (dct2(L[:, :, i]) + color_weight * Xdct) / param
@@ -131,14 +134,17 @@ def run_gp_editing(src_im, dst_im, mask_im, gan_im, color_weight, sigma, gradien
     return gan_im
 
 def run_GP_editing(src_im, dst_im, mask_im, bg_for_color, color_weight, sigma, gradient_kernel='normal'):
+    T_min=time.time()
     dst_feature = gradient_feature(dst_im, bg_for_color, gradient_kernel)
-    src_feature = gradient_feature(src_im, bg_for_color, gradient_kernel)
+    src_feature = gradient_feature(src_im, bg_for_color, gradient_kernel)             # 两个 gradient_feature 耗时1s
     feature = dst_feature * (1 - mask_im) + src_feature * mask_im
-
+    print('T_min',time.time()-T_min)
     size, dtype = feature.shape[:2], feature.dtype
     param_l = laplacian_param(size, dtype)
     param_g = gaussian_param(size, dtype, sigma)
+
     gan_im = gaussian_poisson_editing(feature, param_l, param_g, color_weight=color_weight)
+
     gan_im = np.clip(gan_im, 0, 1)
 
     return gan_im
@@ -190,7 +196,6 @@ def GP_fusion(obj, bg, mask, image_size, gpu, color_weight=1, sigma=0.5, gradien
     obj_im_pyramid, _ = laplacian_pyramid(obj, max_level, image_size, smooth_sigma)
     bg_im_pyramid, _ = laplacian_pyramid(bg, max_level, image_size, smooth_sigma)
 
-    # init GAN image
     mask_init = ndarray_resize(mask, (image_size, image_size), order=0)[:, :, np.newaxis]
     # copy_paste_init = obj_im_pyramid[0] * mask_init + bg_im_pyramid[0] * (1 - mask_init)
 
@@ -201,8 +206,37 @@ def GP_fusion(obj, bg, mask, image_size, gpu, color_weight=1, sigma=0.5, gradien
         # gan_im = ndarray_resize(gan_im, size)
         # gan_im=obj_im_pyramid[level]* mask[:, :, np.newaxis]+obj_im_pyramid[level] * (1 - mask[:, :, np.newaxis])
         gan_im=bg_im_pyramid[level]
+        T1=time.time()
         gan_im = run_GP_editing(obj_im_pyramid[level], bg_im_pyramid[level], mask_im, gan_im, color_weight, sigma,
                                 gradient_kernel)
+        print('TIME',time.time()-T1)
+
+    gan_im = np.clip(gan_im * 255, 0, 255).astype(np.uint8)
+
+    return gan_im
+
+def GP_single_fusion(obj, bg, mask, gpu, color_weight=1, sigma=0.5, gradient_kernel='normal', smooth_sigma=1,
+           supervised=True, nz=100, n_iteration=1000):
+    w_orig, h_orig, _ = obj.shape
+    ############################ Gaussian-Poisson GAN Image Editing ###########################
+    # pyramid
+    image_size=max(w_orig, h_orig)
+    max_level = int(math.ceil(np.log2(max(w_orig, h_orig) / max(w_orig, h_orig))))
+    # max_level=0
+    obj_im_pyramid, _ = laplacian_pyramid(obj, max_level, max(w_orig, h_orig), smooth_sigma)
+    bg_im_pyramid, _ = laplacian_pyramid(bg, max_level, max(w_orig, h_orig), smooth_sigma)
+
+    # Start pyramid
+    for level in range(max_level + 1):
+        size = obj_im_pyramid[level].shape[:2]
+        mask_im = ndarray_resize(mask, size, order=0)[:, :, np.newaxis, np.newaxis]
+        # gan_im = ndarray_resize(gan_im, size)
+        # gan_im=obj_im_pyramid[level]* mask[:, :, np.newaxis]+obj_im_pyramid[level] * (1 - mask[:, :, np.newaxis])
+        gan_im=bg_im_pyramid[level]
+        T1=time.time()
+        gan_im = run_GP_editing(obj_im_pyramid[level], bg_im_pyramid[level], mask_im, gan_im, color_weight, sigma,
+                                gradient_kernel)
+        print('TIME T1',time.time()-T1)
 
     gan_im = np.clip(gan_im * 255, 0, 255).astype(np.uint8)
 

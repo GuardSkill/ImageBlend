@@ -4,8 +4,10 @@ import time
 
 from skimage import img_as_float, img_as_int
 from skimage.io import imread, imsave
+import cv2
 
-from gp_gan import GP_fusion
+from GPBlend.gp_gan import GP_single_fusion
+from GPBlend.gp_pytorch import GP_GPU_fusion
 
 basename = lambda path: os.path.splitext(os.path.basename(path))[0]
 
@@ -15,9 +17,10 @@ basename = lambda path: os.path.splitext(os.path.basename(path))[0]
 
 
 def main():
+    T0=time.time()
     parser = argparse.ArgumentParser(description='Gaussian-Poisson GAN for high-resolution image blending')
     parser.add_argument('--invert_mask', type=int, default=0, help='# the orginal mask : 1-foreground 0-background, invert mask 0-foreground 1-background')
-    parser.add_argument('--inpaint_bg', type=int, default=0, help='# of base filters in encoder')
+    parser.add_argument('--inpaint_bg', type=int, default=1, help='# of base filters in encoder')
     parser.add_argument('--nef', type=int, default=64, help='# of base filters in encoder')
     parser.add_argument('--ngf', type=int, default=64, help='# of base filters in decoder or G')
     parser.add_argument('--nc', type=int, default=3, help='# of output channels in decoder or G')
@@ -56,7 +59,7 @@ def main():
     for key, value in vars(args).items():
         print('\t{}: {}'.format(key, value))
     print('')
-    T1=time.time()
+
 
     # Init image list
     if args.list_path:
@@ -106,20 +109,35 @@ def main():
         # mask=cv2.erode(mask, cv2.getStructuringElement(
         #     cv2.MORPH_RECT, (3, 3)), iterations=2)
         mask = ((mask) > 0.5).astype(np.uint8)
-
-        blended_im = GP_fusion(obj, bg, mask, args.image_size, args.gpu, color_weight=args.color_weight,
+        T2=time.time()
+        # blended_im = GP_fusion(obj, bg, mask, args.image_size, args.gpu, color_weight=args.color_weight,
+        #                        sigma=args.sigma,
+        #                        gradient_kernel=args.gradient_kernel, smooth_sigma=args.smooth_sigma,
+        #                        supervised=args.supervised,
+        #                        nz=args.nz, n_iteration=args.n_iteration)
+        # blended_im = GP_single_fusion(obj, bg, mask, args.gpu, color_weight=args.color_weight,
+        #                        sigma=args.sigma,
+        #                        gradient_kernel=args.gradient_kernel, smooth_sigma=args.smooth_sigma,
+        #                        supervised=args.supervised,
+        #                        nz=args.nz, n_iteration=args.n_iteration)
+        blended_im = GP_GPU_fusion(obj, bg, mask, args.gpu, color_weight=args.color_weight,
                                sigma=args.sigma,
                                gradient_kernel=args.gradient_kernel, smooth_sigma=args.smooth_sigma,
                                supervised=args.supervised,
                                nz=args.nz, n_iteration=args.n_iteration)
-
+        print('T2 ', time.time() - T2)
         if args.blended_image:
-            imsave(args.blended_image, blended_im)
+            # imsave(args.blended_image, blended_im)
+            T3 = time.time()
+            blended_im=cv2.cvtColor(blended_im,cv2.COLOR_BGR2RGB)
+            cv2.imwrite(args.blended_image, blended_im)
+            print('T3 Save Time', time.time() - T3)
         else:
             imsave('{}/obj_{}_bg_{}_mask_{}.png'.format(args.result_folder, basename(test_list[idx][0]),
                                                         basename(test_list[idx][1]), basename(test_list[idx][2])),
                    blended_im)
 
-    print(f'Time used:{time.time()-T1} s')
+
+    print(f'Total Time used:{time.time()-T0} s')
 if __name__ == '__main__':
     main()
