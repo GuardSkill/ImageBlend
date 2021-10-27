@@ -172,7 +172,7 @@ def GP_GPU_fusion(obj, bg, mask, gpu=0, color_weight=1, sigma=0.5, gradient_kern
     gan_im = run_GP_editing(obj, bg, mask, gan_im, color_weight, sigma,
                             gradient_kernel)
     print('TIME T1', time.time() - T1)
-    gan_im=gan_im.permute(1,2,0).numpy()[::-1]
+    gan_im=gan_im.permute(1,2,0).numpy()
     gan_im = np.clip(gan_im * 255, 0, 255).astype(np.uint8)
 
     return gan_im
