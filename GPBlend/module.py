@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numbers
 
+
 class GaussianSmoothing(nn.Module):
     """
     Apply gaussian smoothing on a
@@ -70,18 +71,17 @@ class GaussianSmoothing(nn.Module):
         """
         return self.conv(input, weight=self.weight, groups=self.groups)
 
+
 # 图向的宽上面做梯度1920-> 1922 -> 1920,逐行求梯度
 class normal_h(nn.Module):
     def __init__(self, channels=3, dim=2):
         super(normal_h, self).__init__()
+        # Reshape to depthwise convolutional
+        self.weight =torch.tensor([[0., -1., 1.]])
+        self.weight = self.weight.view(1, 1, *self.weight.size())
+        self.weight = self.weight.repeat(channels, *[1] * (self.weight.dim() - 1))
+        self.weight = torch.nn.Parameter(self.weight.double())
 
-        kernel = torch.tensor([[0, -1, 1]])
-
-        # Reshape to depthwise convolutional weight
-        kernel = kernel.view(1, 1, *kernel.size())
-        kernel = kernel.repeat(channels, *[1] * (kernel.dim() - 1))
-
-        self.register_buffer('weight', kernel.double())
         self.groups = channels
         if dim == 1:
             self.conv = F.conv1d
@@ -102,21 +102,21 @@ class normal_h(nn.Module):
         Returns:
             filtered (torch.Tensor): Filtered output.
         """
-        p2d = (1, 1,0,0)
-        input=F.pad(input,p2d,'replicate')
+        p2d = (1, 1, 0, 0)
+        input = F.pad(input, p2d, 'replicate')
         return self.conv(input, weight=self.weight, groups=self.groups)
+
 
 class normal_w(nn.Module):
     def __init__(self, channels=3, dim=2):
         super(normal_w, self).__init__()
 
-        kernel = torch.tensor([[0, -1, 1]]).T
+        self.weight = torch.tensor([[0., -1., 1.]]).T
+        self.weight = self.weight.view(1, 1, *self.weight.size())
+        self.weight = self.weight.repeat(channels, *[1] * (self.weight.dim() - 1))
+        self.weight = torch.nn.Parameter(self.weight.double())
 
-        # Reshape to depthwise convolutional weight
-        kernel = kernel.view(1, 1, *kernel.size())
-        kernel = kernel.repeat(channels, *[1] * (kernel.dim() - 1))
 
-        self.register_buffer('weight', kernel.double())
         self.groups = channels
         if dim == 1:
             self.conv = F.conv1d
@@ -137,8 +137,6 @@ class normal_w(nn.Module):
         Returns:
             filtered (torch.Tensor): Filtered output.
         """
-        p2d =(0,0,1, 1)
-        input=F.pad(input,p2d,'replicate')
+        p2d = (0, 0, 1, 1)
+        input = F.pad(input, p2d, 'replicate')
         return self.conv(input, weight=self.weight, groups=self.groups)
-
-

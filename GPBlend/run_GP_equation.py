@@ -1,13 +1,15 @@
 import argparse
 import os
 import time
-
+import numpy as np
+import torch
 from skimage import img_as_float, img_as_int
 from skimage.io import imread, imsave
 import cv2
 
-from GPBlend.gp_gan import GP_single_fusion
-from GPBlend.gp_pytorch import GP_GPU_fusion
+from gp_gan import GP_single_fusion
+from gp_model import GP_GPU_Model_fusion
+from gp_pytorch import GP_GPU_fusion
 
 basename = lambda path: os.path.splitext(os.path.basename(path))[0]
 
@@ -17,6 +19,7 @@ basename = lambda path: os.path.splitext(os.path.basename(path))[0]
 
 
 def main():
+    torch.cuda.synchronize()
     T0=time.time()
     parser = argparse.ArgumentParser(description='Gaussian-Poisson GAN for high-resolution image blending')
     parser.add_argument('--invert_mask', type=int, default=0, help='# the orginal mask : 1-foreground 0-background, invert mask 0-foreground 1-background')
@@ -87,12 +90,10 @@ def main():
         # bg = img_as_float(imread(test_list[idx][1]))[:,:,:-1]
         bg = img_as_float(imread(test_list[idx][1]))
         mask = imread(test_list[idx][2], as_gray=True).astype(obj.dtype)
-        import numpy as np
         if args.invert_mask:
             mask=1-mask
         mask = ((mask) > 0.5).astype(np.uint8)
         # mask = ((mask) > 0.5).astype(np.uint8)
-        import cv2
         bg = imread(test_list[idx][1])[:,:,:3]
 
         kernel = np.ones((5, 5), np.uint8)
@@ -120,11 +121,7 @@ def main():
         #                        gradient_kernel=args.gradient_kernel, smooth_sigma=args.smooth_sigma,
         #                        supervised=args.supervised,
         #                        nz=args.nz, n_iteration=args.n_iteration)
-        blended_im = GP_GPU_fusion(obj, bg, mask, args.gpu, color_weight=args.color_weight,
-                               sigma=args.sigma,
-                               gradient_kernel=args.gradient_kernel, smooth_sigma=args.smooth_sigma,
-                               supervised=args.supervised,
-                               nz=args.nz, n_iteration=args.n_iteration)
+        blended_im = GP_GPU_Model_fusion(obj, bg, mask, args.gpu, color_weight=args.color_weight,sigma=args.sigma)
         print('T2 ', time.time() - T2)
         if args.blended_image:
             # imsave(args.blended_image, blended_im)
