@@ -80,7 +80,7 @@ class normal_h(nn.Module):
         self.weight =torch.tensor([[0., -1., 1.]])
         self.weight = self.weight.view(1, 1, *self.weight.size())
         self.weight = self.weight.repeat(channels, *[1] * (self.weight.dim() - 1))
-        self.weight = torch.nn.Parameter(self.weight.double())
+        self.weight = torch.nn.Parameter(self.weight)
 
         self.groups = channels
         if dim == 1:
@@ -114,7 +114,7 @@ class normal_w(nn.Module):
         self.weight = torch.tensor([[0., -1., 1.]]).T
         self.weight = self.weight.view(1, 1, *self.weight.size())
         self.weight = self.weight.repeat(channels, *[1] * (self.weight.dim() - 1))
-        self.weight = torch.nn.Parameter(self.weight.double())
+        self.weight = torch.nn.Parameter(self.weight)
 
 
         self.groups = channels

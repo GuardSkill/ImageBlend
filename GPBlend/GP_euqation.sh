@@ -19,7 +19,7 @@ GP_results/res_phone_GP_w2e_5.png
 --blended_image GP_results/res_ZRS_GP_w8e_4.png
 --color_weight 0.0008
 --invert_mask 1
-
+--inpaint_bg 0
 # 视频融合
 --src_image
 /Disk1/XR/xr_car
@@ -47,3 +47,16 @@ images/car_result_video_new_mask_6e_6/
 --inpaint_bg
 1
 
+# test
+--src_image
+/Disk1/XR/xr_car
+--dst_image
+/Disk1/XR/xr_car
+--mask_image
+/Disk1/XR/car/label_mask.png
+--result_folder
+images/temp/
+--color_weight
+6e-6
+--inpaint_bg
+0

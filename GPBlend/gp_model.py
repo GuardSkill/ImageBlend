@@ -4,8 +4,9 @@ import torch
 
 import numpy as np
 # from scipy.fftpack import dct, idct
+from GPBlend.dct_module import dctmodule2D
 from gp_gan import laplacian_param, gaussian_param
-from t7_dct import dct, idct
+from t7_dct import dct, idct, dct_2d, idct_2d
 from scipy.ndimage import correlate
 from skimage.transform import resize
 
@@ -99,11 +100,13 @@ def gaussian_param_torch(size, sigma, device='cuda'):
 
 
 def dct2(x, norm='ortho'):
-    return dct(dct(x, norm=norm).T, norm=norm).T
+    return dct_2d(x, norm=norm)
+    # return dct(dct(x, norm=norm).T, norm=norm).T
 
 
 def idct2(x, norm='ortho'):
-    return idct(idct(x, norm=norm).T, norm=norm).T
+    return idct_2d(x, norm=norm)
+    # return idct(idct(x, norm=norm).T, norm=norm).T
 
 
 def gaussian_poisson_editing(X, param, color_weight=1):
@@ -124,6 +127,7 @@ class Gradient_Caculater(torch.nn.Module):
         self.h_conv = normal_h()
         self.w_conv = normal_w()
         self.feature = torch.nn.Parameter(torch.zeros((*img_shape, 5)))
+        # self.feature =torch.zeros((*img_shape, 5)).cuda()
 
     def forward(self, im, color_feature):
         self.feature[:, :, :, :, 0] = color_feature
@@ -135,60 +139,101 @@ class Gradient_Caculater(torch.nn.Module):
 
 
 class GP_model(torch.nn.Module):
-    def __init__(self, img_shape, color_weight=8e-10, sigma=0.5, eps=1e-12):
+    def __init__(self, img_shape, color_weight=8e-10, sigma=0.5, device='cuda', eps=1e-12):
         # img_shape :(B, C, H, W)
         super(GP_model, self).__init__()
         self.gradient_caculater_Dst = Gradient_Caculater(img_shape)
         self.gradient_caculater_Src = Gradient_Caculater(img_shape)
         size = img_shape[-2:]
-        param_l = laplacian_param_torch(size)
-        param_g = gaussian_param_torch(size, sigma)
+        param_l = laplacian_param_torch(size, device)
+        param_g = gaussian_param_torch(size, sigma, device)
         self.param_total = param_l + color_weight * param_g
         self.param_total[(self.param_total >= 0) & (self.param_total < eps)] = eps
         self.param_total[(self.param_total < 0) & (self.param_total > -eps)] = -eps
-        self.Y = torch.zeros(img_shape[1:])
-        # self.Y = torch.nn.Parameter(torch.zeros(img_shape[1:]))
-
+        self.color_weight = color_weight
+        self.dct_2d_module=dctmodule2D(img_shape)
+        # self.Y = torch.zeros(img_shape[1:])
+        # self.Y = torch.nn.Parameter(torch.zeros(img_shape))
 
     @torch.no_grad()
-    def forward(self, src_im, dst_im, mask_im, bg_for_color, color_weight, sigma):
+    def forward(self, src_im, dst_im, mask_im, bg_for_color):
+
         dst_feature = self.gradient_caculater_Dst(dst_im, color_feature=bg_for_color)
         src_feature = self.gradient_caculater_Src(src_im, color_feature=bg_for_color)
+
         # (B, C, H, W,5)
+
         mask_im = mask_im.unsqueeze(dim=-1).float()
         X = dst_feature * (1 - mask_im) + src_feature * mask_im
+
         # fusion
+
         Fh = (X[:, :, :, :, 1] + torch.roll(X[:, :, :, :, 3], -1, 3)) / 2
         Fv = (X[:, :, :, :, 2] + torch.roll(X[:, :, :, :, 4], -1, 2)) / 2
+        # Fh = X[:, :, :, :, 1]
+        # Fv = X[:, :, :, :, 2]
         L = torch.roll(Fh, 1, 3) + torch.roll(Fv, 1, 2) - Fh - Fv
-        for i in range(3):
-            Xdct = dct2(X[0, i, :, :, 0])  # 原图每个通道
-            Ydct = (dct2(L[0, i, :, :]) + color_weight * Xdct) / self.param_total
-            self.Y[i, :, :] = idct2(Ydct)
-        return self.Y
+        # L = X[:, :, :, :, 3] + X[:, :, :, :, 4] - Fh - Fv
+
+        TEST_TIME = time.time()
+        Xdct = dct2(X[:, :, :, :, 0])  # 原图每个通道
+        # Xdct=self.dct_2d_module(X[:, :, :, :, 0])
+        print('TEST TIME', (time.time() - TEST_TIME) * 1000)
+        Ydct = (dct2(L) + self.color_weight * Xdct) / self.param_total
+
+        results = idct2(Ydct)
 
 
-@torch.no_grad()
-def GP_GPU_Model_fusion(obj, bg, mask, gpu=0, color_weight=8e-10, sigma=0.5, gradient_kernel='normal', smooth_sigma=1,
-                        supervised=True, nz=100, n_iteration=1000):
-    T0 = time.time()
-    device = f'cuda:{gpu}'
-    w_orig, h_orig, _ = obj.shape
-    obj = torch.from_numpy(obj[np.newaxis]).to(device).permute(0, 3, 1, 2)
-    bg = torch.from_numpy(bg[np.newaxis]).to(device).permute(0, 3, 1, 2)
-    mask = torch.from_numpy(mask[np.newaxis][np.newaxis]).to(device)
-    print('CPU TO GPU', time.time() - T0)
-    ############################ Gaussian-Poisson GAN Image Editing ###########################
-    # pyramid
-    # gauss = GaussianSmoothing(channels=3, kernel_size=3, sigma=smooth_sigma, dim=2)
-    # Start pyramid
-    T1 = time.time()
-    infer_model = GP_model(img_shape=obj.shape, color_weight=color_weight, sigma=sigma).to(device)
-    print('Init TIME T1', time.time() - T1)
 
-    gan_im = infer_model(obj, bg, mask, bg, color_weight, sigma)
-    gan_im = gan_im.permute(1, 2, 0).cpu().numpy()
-    gan_im = np.clip(gan_im * 255, 0, 255).astype(np.uint8)
-    print('Init + infer TIME', time.time() - T1)
+        # results = results[:, [2, 1, 0], :, :]
+        results = torch.clamp(results, min=-0, max=255)
 
-    return gan_im
+        return results  # BGR To RGB，+++time
+
+
+class GPU_model_GP():
+    def __init__(self, img_shape, color_weight=8e-10, sigma=0.5, gpu=0):
+        if gpu >= 0:
+            device = f'cuda:{gpu}'
+        else:
+            device = 'cpu'
+        self.infer_model = GP_model(img_shape=img_shape, color_weight=color_weight, sigma=sigma,
+                                    device=device).eval().to(device)
+
+        # -----------------------------------
+        # input_name = ['src_im', 'dst_im', 'mask_im', 'bg_for_color']
+        # output_name = ['output']
+        # from torch.autograd import Variable
+        # input = Variable(torch.randn(1, 3, 1080, 1920)).cuda()
+        # mask = Variable(torch.randn(1, 1, 1080, 1920)).cuda()
+        # torch.onnx.export(self.infer_model, (input,input,mask,input), 'GP_model.onnx',
+        #                   input_names=input_name, output_names=output_name, verbose=True, opset_version=13)
+        # -----------------------------------
+        # from torch2trt import torch2trt
+        # x = torch.ones((1, 3, 1080, 1920)).float().cuda()
+        # model_trt = torch2trt(self.infer_model , [x,x,x,x])
+
+    @torch.no_grad()
+    def GP_GPU_Model_fusion(self, obj, bg, mask, gpu=0):
+        T00 = time.time()
+        if gpu >= 0:
+            device = f'cuda:{gpu}'
+        else:
+            device = 'cpu'
+        w_orig, h_orig, _ = obj.shape
+        obj = torch.from_numpy(obj[np.newaxis]).to(device).float().permute(0, 3, 1, 2)
+        bg = torch.from_numpy(bg[np.newaxis]).to(device).float().permute(0, 3, 1, 2)
+        mask = torch.from_numpy(mask[np.newaxis][np.newaxis]).to(device)
+        print('Data TO GPU TIME', time.time() - T00)
+        ############################ Gaussian-Poisson GAN Image Editing ###########################
+        T1 = time.time()
+        gan_ims = self.infer_model(obj, bg, mask, bg)
+        gan_ims = gan_ims.permute(0, 2, 3, 1).int()
+        print('Infer TIME (Not CPU to GPU and GPU to CPU)', time.time() - T1)
+        T2 = time.time()
+        gan_ims = gan_ims.cpu().numpy()  #
+        # gan_ims = gan_ims.astype(np.uint8)
+        # gan_im = np.clip(gan_im * 255, 0, 255).astype(np.uint8)
+        print('Data to Memory', time.time() - T2)
+        print('Infer TIME', time.time() - T00)
+        return gan_ims
