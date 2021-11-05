@@ -20,6 +20,7 @@ basename = lambda path: os.path.splitext(os.path.basename(path))[0]
 
 def main():
     torch.cuda.synchronize()
+    torch.backends.cudnn.benchmark = True
     T0 = time.time()
     parser = argparse.ArgumentParser(description='Gaussian-Poisson GAN for high-resolution image blending')
     parser.add_argument('--invert_mask', type=int, default=0,
@@ -104,6 +105,8 @@ def main():
         total_size = 40   # for test time
     T_init_model = time.time()
     gp_model = GPU_model_GP(img_shape=(1, 3, *mask.shape), color_weight=args.color_weight, gpu=args.gpu)
+    for param in gp_model.infer_model.parameters():
+        param.grad = None
     print('Init Time', time.time() - T_init_model, 's')
     T_infer = 0.0
     for idx in range(total_size):
@@ -125,8 +128,10 @@ def main():
         # bg = img_as_float(bg)
         print("Images Read time ", time.time() - T_read)
         # print('T0 Read + Dilate + Inpaint(option)  time', time.time() - T0_single)
+        torch.cuda.synchronize()
         T2 = time.time()
         blended_ims = gp_model.GP_GPU_Model_fusion(obj, bg, mask, args.gpu)
+        torch.cuda.synchronize()
         T2 = time.time() - T2
         print('T2 algorithm Time ', T2)
         T_infer += T2

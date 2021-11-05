@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -37,19 +39,28 @@ def dct(x, norm=None):
     :param norm: the normalization, None or 'ortho'
     :return: the DCT-II of the signal over the last dimension
     """
+    torch.cuda.synchronize()
+    TEST_TIME = time.time()
     x_shape = x.shape
     N = x_shape[-1]
     x = x.contiguous().view(-1, N)
 
-    v = torch.cat([x[:, ::2], x[:, 1::2].flip([1])], dim=1)
+    a_idx = torch.arange(0, N, 2)
+    a = x[:, a_idx]
+    b_idx  = torch.arange(N - 1, 0, -2)
+    b = x[:, b_idx]
+    v = torch.cat([a, b], dim=1)
+    # v = torch.cat([x[:, ::2], x[:, 1::2].flip([1])], dim=1)
 
     # Vc = torch.rfft(v, 1, onesided=False)              #
+
     Vc = torch.view_as_real(torch.fft.fft(v, dim=1))  # pytoch 1.9
+    torch.cuda.synchronize()
+    print('TEST TIME233', (time.time() - TEST_TIME) * 1000)
 
     k = - torch.arange(N, dtype=x.dtype, device=x.device)[None, :] * np.pi / (2 * N)
     W_r = torch.cos(k)
     W_i = torch.sin(k)
-
     V = Vc[:, :, 0] * W_r - Vc[:, :, 1] * W_i
 
     if norm == 'ortho':
