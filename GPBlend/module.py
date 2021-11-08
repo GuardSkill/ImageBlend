@@ -81,7 +81,7 @@ class normal_h(nn.Module):
         self.weight = self.weight.view(1, 1, *self.weight.size())
         self.weight = self.weight.repeat(channels, *[1] * (self.weight.dim() - 1))
         self.weight = torch.nn.Parameter(self.weight)
-
+        self.p2d = (1, 1, 0, 0)
         self.groups = channels
         if dim == 1:
             self.conv = F.conv1d
@@ -102,8 +102,7 @@ class normal_h(nn.Module):
         Returns:
             filtered (torch.Tensor): Filtered output.
         """
-        p2d = (1, 1, 0, 0)
-        input = F.pad(input, p2d, 'replicate')
+        input = F.pad(input, self.p2d, 'replicate')
         return self.conv(input, weight=self.weight, groups=self.groups)
 
 
@@ -115,7 +114,7 @@ class normal_w(nn.Module):
         self.weight = self.weight.view(1, 1, *self.weight.size())
         self.weight = self.weight.repeat(channels, *[1] * (self.weight.dim() - 1))
         self.weight = torch.nn.Parameter(self.weight)
-
+        self.p2d = (0, 0, 1, 1)
 
         self.groups = channels
         if dim == 1:
@@ -137,6 +136,6 @@ class normal_w(nn.Module):
         Returns:
             filtered (torch.Tensor): Filtered output.
         """
-        p2d = (0, 0, 1, 1)
-        input = F.pad(input, p2d, 'replicate')
+
+        input = F.pad(input, self.p2d, 'replicate')
         return self.conv(input, weight=self.weight, groups=self.groups)

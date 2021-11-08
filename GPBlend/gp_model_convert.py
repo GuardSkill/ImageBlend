@@ -157,7 +157,7 @@ class GP_model(torch.nn.Module):
         self.idct_2d_module = idctmodule2D(img_shape)
         # self.Y = torch.zeros(img_shape[1:])
         # self.Y = torch.nn.Parameter(torch.zeros(img_shape))
-        self.half()
+        # self.half()
 
     def _apply(self, fn):
         super(GP_model, self)._apply(fn)
@@ -166,8 +166,8 @@ class GP_model(torch.nn.Module):
 
     @torch.no_grad()
     def forward(self, src_im, dst_im, mask_im, bg_for_color):
-        src_im = src_im.half()
-        dst_im = dst_im.half()
+        # src_im = src_im.half()
+        # dst_im = dst_im.half()
         # mask_im = mask_im
         bg_for_color = bg_for_color.half()
         dst_feature = self.gradient_caculater_Dst(dst_im, color_feature=bg_for_color)
@@ -176,7 +176,7 @@ class GP_model(torch.nn.Module):
         # (B, C, H, W,5)
 
         mask_im = mask_im.unsqueeze(dim=-1).float()
-        mask_im =mask_im.half()
+        # mask_im =mask_im.half()
         X = dst_feature * (1 - mask_im) + src_feature * mask_im
 
         # fusion
@@ -222,9 +222,9 @@ class GPU_model_GP():
         #                   input_names=input_name, output_names=output_name, verbose=True, opset_version=13)
         # -----------------------------------
         # print(torch2trt.CONVERTERS)
-        # x = torch.ones((1, 3, 1080, 1920)).float().cuda()
-        # mask = torch.ones((1, 1, 1080, 1920)).float().cuda()
-        # model_trt = torch2trt(self.infer_model, [x, x, mask, x])
+        x = torch.ones((1, 3, 1080, 1920)).float().cuda()
+        mask = torch.ones((1, 1, 1080, 1920)).float().cuda()
+        model_trt = torch2trt(self.infer_model, [x, x, mask, x])
 
     @torch.no_grad()
     def GP_GPU_Model_fusion(self, obj, bg, mask, gpu=0):
