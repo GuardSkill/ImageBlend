@@ -40,8 +40,8 @@ class dctmodule2D(nn.Module):
         super(dctmodule2D, self).__init__()
         N_weight = shape[-1]
         k_weight = - torch.arange(N_weight, dtype=float)[None, :] * np.pi / (2 * N_weight)
-        self.W_r_weight = torch.cos(k_weight)
-        self.W_i_weight = torch.sin(k_weight)
+        self.W_r_weight = torch.nn.Parameter(torch.cos(k_weight))
+        self.W_i_weight = torch.nn.Parameter(torch.sin(k_weight))
 
         self.inverted_index_weight = torch.arange(N_weight - 1, 0, -2)
         self.index_weight = torch.arange(0, N_weight, 2)
@@ -77,7 +77,7 @@ class dctmodule2D(nn.Module):
         # Vc = torch.rfft(v, 1, onesided=False)              #
 
         Vc = torch.view_as_real(torch.fft.fft(v.float(), dim=1))  # pytoch 1.9
-        Vc = Vc.half()
+        # Vc = torch.view_as_real(torch.fft.fft(v, dim=1))
         V = Vc[:, :, 0] * self.W_r_weight - Vc[:, :, 1] * self.W_i_weight
 
         if norm == 'ortho':
@@ -96,8 +96,9 @@ class dctmodule2D(nn.Module):
         # Vc = torch.rfft(v, 1, onesided=False)
         # torch.cuda.synchronize()
         # TEST_TIME = time.time()
-        Vc = torch.view_as_real(torch.fft.fft(v.float(), dim=1))  # pytoch 1.9   第二次fft最耗时
-        Vc = Vc.half()
+        Vc = torch.view_as_real(torch.fft.fft(v, dim=1))  # pytoch 1.9   第二次fft最耗时
+        # Vc = torch.view_as_real(torch.fft.fft(v, dim=1))
+        # Vc = Vc
         # torch.cuda.synchronize()
         # print('TEST TIME', (time.time() - TEST_TIME) * 1000)
         V = Vc[:, :, 0] * self.W_r_height - Vc[:, :, 1] * self.W_i_height
@@ -116,16 +117,16 @@ class idctmodule2D(nn.Module):
         super(idctmodule2D, self).__init__()
         N_weight = shape[-1]
         k_weight = torch.arange(N_weight, dtype=float)[None, :] * np.pi / (2 * N_weight)
-        self.W_r_weight = torch.cos(k_weight)
-        self.W_i_weight = torch.sin(k_weight)
+        self.W_r_weight = torch.nn.Parameter(torch.cos(k_weight))
+        self.W_i_weight = torch.nn.Parameter(torch.sin(k_weight))
 
         self.inverted_index_weight = torch.arange(N_weight - 1, 0, -2)
         self.index_weight = torch.arange(0, N_weight, 2)
 
         N_height = shape[-2]
         k_height = torch.arange(N_height, dtype=float)[None, :] * np.pi / (2 * N_height)
-        self.W_r_height = torch.cos(k_height)
-        self.W_i_height = torch.sin(k_height)
+        self.W_r_height = torch.nn.Parameter(torch.cos(k_height))
+        self.W_i_height = torch.nn.Parameter(torch.sin(k_height))
         self.inverted_index_height = torch.arange(N_height - 1, 0, -2)
         self.index_height = torch.arange(0, N_height, 2)
 
@@ -160,8 +161,8 @@ class idctmodule2D(nn.Module):
         V = torch.cat([V_r.unsqueeze(2), V_i.unsqueeze(2)], dim=2)
 
         # v = torch.irfft(V, 1, onesided=False)
-        v = torch.fft.irfft(torch.view_as_complex(V.float()), n=V.shape[1], dim=1)  # torch 1.9
-        v = v.half()
+        v = torch.fft.irfft(torch.view_as_complex(V), n=V.shape[1], dim=1)  # torch 1.9
+        # v = torch.fft.irfft(torch.view_as_complex(V.float()), n=V.shape[1], dim=1).half()  # torch 1.9
         x = v.new_zeros(v.shape)
         x[:, ::2] += v[:, :N - (N // 2)]
         x[:, 1::2] += v.flip([1])[:, :N // 2]
@@ -186,8 +187,9 @@ class idctmodule2D(nn.Module):
 
         V = torch.cat([V_r.unsqueeze(2), V_i.unsqueeze(2)], dim=2)
 
-        # v = torch.irfft(V, 1, onesided=False)
-        v = torch.fft.irfft(torch.view_as_complex(V.float()), n=V.shape[1], dim=1).half()  # torch 1.9
+        # v = torch.irfft(V, 1, onesided=
+        v = torch.fft.irfft(torch.view_as_complex(V), n=V.shape[1], dim=1)
+        # v = torch.fft.irfft(torch.view_as_complex(V.float()), n=V.shape[1], dim=1).half()  # torch 1.9
 
         x = v.new_zeros(v.shape)
         x[:, ::2] += v[:, :N - (N // 2)]

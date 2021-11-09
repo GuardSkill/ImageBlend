@@ -117,16 +117,18 @@ def main():
         #     cv2.MORPH_RECT, (3, 3)), iterations=2)
         mask = ((mask) > 0.5).astype(np.uint8)
 
-        blended_im = GP_fusion(obj, bg, mask, args.image_size, args.gpu, color_weight=args.color_weight,
-                               sigma=args.sigma,
-                               gradient_kernel=args.gradient_kernel, smooth_sigma=args.smooth_sigma,
-                               supervised=args.supervised,
-                               nz=args.nz, n_iteration=args.n_iteration)
+        # blended_im = GP_fusion(obj, bg, mask, args.image_size, args.gpu, color_weight=args.color_weight,
+        #                        sigma=args.sigma,
+        #                        gradient_kernel=args.gradient_kernel, smooth_sigma=args.smooth_sigma,
+        #                        supervised=args.supervised,
+        #                        nz=args.nz, n_iteration=args.n_iteration)
+        T2=time.time()
         blended_im = GP_single_fusion(obj, bg, mask, args.gpu, color_weight=args.color_weight,
                                sigma=args.sigma,
                                gradient_kernel=args.gradient_kernel, smooth_sigma=args.smooth_sigma,
                                supervised=args.supervised,
                                nz=args.nz, n_iteration=args.n_iteration)
+        print('Algorithm T2',time.time()-T2)
         if args.blended_image:
             imsave(args.blended_image, blended_im)
         else:

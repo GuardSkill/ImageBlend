@@ -140,12 +140,48 @@ class Gradient_Caculater(torch.nn.Module):
         return self.feature
 
 
-class GP_model(torch.nn.Module):
+class GP_model_T1(torch.nn.Module):
     def __init__(self, img_shape, color_weight=8e-10, sigma=0.5, device='cuda', eps=1e-12):
         # img_shape :(B, C, H, W)
-        super(GP_model, self).__init__()
+        super(GP_model_T1, self).__init__()
         self.gradient_caculater_Dst = Gradient_Caculater(img_shape)
         self.gradient_caculater_Src = Gradient_Caculater(img_shape)
+        # self.half()
+
+    def _apply(self, fn):
+        super(GP_model_T1, self)._apply(fn)
+        return self
+
+    @torch.no_grad()
+    def forward(self, src_im, dst_im, mask_im, bg_for_color):
+        # src_im = src_im.half()
+        # dst_im = dst_im.half()
+        # bg_for_color = bg_for_color.half()
+        mask_im = mask_im.unsqueeze(dim=-1).float()
+        dst_feature = self.gradient_caculater_Dst(dst_im, color_feature=bg_for_color)
+        src_feature = self.gradient_caculater_Src(src_im, color_feature=bg_for_color)
+
+        # (B, C, H, W,5)
+        # mask_im =mask_im.half()
+        X = dst_feature * (1 - mask_im) + src_feature * mask_im
+
+        # fusion
+
+        Fh = (X[:, :, :, :, 1] + torch.roll(X[:, :, :, :, 3], -1, 3)) / 2
+        Fv = (X[:, :, :, :, 2] + torch.roll(X[:, :, :, :, 4], -1, 2)) / 2
+        # Fh = X[:, :, :, :, 1]
+        # Fv = X[:, :, :, :, 2]
+        L = torch.roll(Fh, 1, 3) + torch.roll(Fv, 1, 2) - Fh - Fv
+        # L = X[:, :, :, :, 3] + X[:, :, :, :, 4] - Fh - Fv
+
+        # Xdct = dct2(X[:, :, :, :, 0])  # 原图每个通
+        return X[:, :, :, :, 0],L  # BGR To RGB，+++time
+
+
+class GP_model_T2(torch.nn.Module):
+    def __init__(self, img_shape, color_weight=8e-10, sigma=0.5, device='cuda', eps=1e-12):
+        # img_shape :(B, C, H, W)
+        super(GP_model_T2, self).__init__()
         size = img_shape[-2:]
         param_l = laplacian_param_torch(size, device)
         param_g = gaussian_param_torch(size, sigma, device)
@@ -160,56 +196,29 @@ class GP_model(torch.nn.Module):
         # self.half()
 
     def _apply(self, fn):
-        super(GP_model, self)._apply(fn)
+        super(GP_model_T2, self)._apply(fn)
         self.param_total = fn(self.param_total)
         return self
 
     @torch.no_grad()
-    def forward(self, src_im, dst_im, mask_im, bg_for_color):
-        # src_im = src_im.half()
-        # dst_im = dst_im.half()
-        # mask_im = mask_im
-        bg_for_color = bg_for_color.half()
-        dst_feature = self.gradient_caculater_Dst(dst_im, color_feature=bg_for_color)
-        src_feature = self.gradient_caculater_Src(src_im, color_feature=bg_for_color)
-
-        # (B, C, H, W,5)
-
-        mask_im = mask_im.unsqueeze(dim=-1).float()
-        # mask_im =mask_im.half()
-        X = dst_feature * (1 - mask_im) + src_feature * mask_im
-
-        # fusion
-
-        Fh = (X[:, :, :, :, 1] + torch.roll(X[:, :, :, :, 3], -1, 3)) / 2
-        Fv = (X[:, :, :, :, 2] + torch.roll(X[:, :, :, :, 4], -1, 2)) / 2
-        # Fh = X[:, :, :, :, 1]
-        # Fv = X[:, :, :, :, 2]
-        L = torch.roll(Fh, 1, 3) + torch.roll(Fv, 1, 2) - Fh - Fv
-        # L = X[:, :, :, :, 3] + X[:, :, :, :, 4] - Fh - Fv
-
-        # Xdct = dct2(X[:, :, :, :, 0])  # 原图每个通道
-        Xdct = self.dct_2d_module(X[:, :, :, :, 0])  # 7 ms
-
+    def forward(self, X, L):
+        Xdct = self.dct_2d_module(X)  # 7 ms
         # Ydct = (dct2(L) + self.color_weight * Xdct) / self.param_total
         Ydct = (self.dct_2d_module(L) + self.color_weight * Xdct) / self.param_total
-
         # results = idct2(Ydct)  # 15 ms
         results =self.idct_2d_module(Ydct)
-
-        # results = results[:, [2, 1, 0], :, :]
         results = torch.clamp(results, min=-0, max=255)
-
         return results  # BGR To RGB，+++time
 
-
-class GPU_model_GP():
+class GPU_model_GP_MultiStage():
     def __init__(self, img_shape, color_weight=8e-10, sigma=0.5, gpu=0):
         if gpu >= 0:
             device = f'cuda:{gpu}'
         else:
             device = 'cpu'
-        self.infer_model = GP_model(img_shape=img_shape, color_weight=color_weight, sigma=sigma,
+        self.infer_model_T1 = GP_model_T1(img_shape=img_shape, color_weight=color_weight, sigma=sigma,
+                                    device=device).eval().to(device)
+        self.infer_model_T2 = GP_model_T2(img_shape=img_shape, color_weight=color_weight, sigma=sigma,
                                     device=device).eval().to(device)
 
         # -----------------------------------
@@ -222,9 +231,9 @@ class GPU_model_GP():
         #                   input_names=input_name, output_names=output_name, verbose=True, opset_version=13)
         # -----------------------------------
         # print(torch2trt.CONVERTERS)
-        x = torch.ones((1, 3, 1080, 1920)).float().cuda()
-        mask = torch.ones((1, 1, 1080, 1920)).float().cuda()
-        model_trt = torch2trt(self.infer_model, [x, x, mask, x])
+        x = torch.ones((1, 3, 2160, 3840)).float().cuda()
+        mask = torch.ones((1, 1, 2160, 3840)).float().cuda()
+        model_trt = torch2trt(self.infer_model_T1, [x, x, mask, x])
 
     @torch.no_grad()
     def GP_GPU_Model_fusion(self, obj, bg, mask, gpu=0):
@@ -243,7 +252,8 @@ class GPU_model_GP():
         ############################ Gaussian-Poisson GAN Image Editing ###########################
         torch.cuda.synchronize()
         T1 = time.time()
-        gan_ims = self.infer_model(obj, bg, mask, bg)
+        X,L = self.infer_model_T1(obj, bg, mask, bg)
+        gan_ims = self.infer_model_T2(X,L)
         gan_ims = gan_ims.permute(0, 2, 3, 1).int()
         torch.cuda.synchronize()
         print('Infer TIME (Not CPU to GPU and GPU to CPU)', time.time() - T1)

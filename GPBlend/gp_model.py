@@ -141,7 +141,7 @@ class Gradient_Caculater(torch.nn.Module):
 
 
 class GP_model(torch.nn.Module):
-    def __init__(self, img_shape, color_weight=8e-10, sigma=0.5, device='cuda', eps=1e-12):
+    def __init__(self, img_shape, color_weight=8e-10, sigma=0.5, device='cuda', eps=1e-12,half_flag=True):
         # img_shape :(B, C, H, W)
         super(GP_model, self).__init__()
         self.gradient_caculater_Dst = Gradient_Caculater(img_shape)
@@ -157,7 +157,9 @@ class GP_model(torch.nn.Module):
         self.idct_2d_module = idctmodule2D(img_shape)
         # self.Y = torch.zeros(img_shape[1:])
         # self.Y = torch.nn.Parameter(torch.zeros(img_shape))
-        self.half()
+        if half_flag:
+            self.half_flag=True
+            self.half()
 
     def _apply(self, fn):
         super(GP_model, self)._apply(fn)
@@ -166,17 +168,16 @@ class GP_model(torch.nn.Module):
 
     @torch.no_grad()
     def forward(self, src_im, dst_im, mask_im, bg_for_color):
-        src_im = src_im.half()
-        dst_im = dst_im.half()
-        # mask_im = mask_im
-        bg_for_color = bg_for_color.half()
+        if self.half_flag:
+            src_im = src_im.half()
+            dst_im = dst_im.half()
+            bg_for_color = bg_for_color.half()
+            mask_im = mask_im.unsqueeze(dim=-1).float().half()
+
         dst_feature = self.gradient_caculater_Dst(dst_im, color_feature=bg_for_color)
         src_feature = self.gradient_caculater_Src(src_im, color_feature=bg_for_color)
 
         # (B, C, H, W,5)
-
-        mask_im = mask_im.unsqueeze(dim=-1).float()
-        mask_im =mask_im.half()
         X = dst_feature * (1 - mask_im) + src_feature * mask_im
 
         # fusion
@@ -188,14 +189,14 @@ class GP_model(torch.nn.Module):
         L = torch.roll(Fh, 1, 3) + torch.roll(Fv, 1, 2) - Fh - Fv
         # L = X[:, :, :, :, 3] + X[:, :, :, :, 4] - Fh - Fv
 
-        # Xdct = dct2(X[:, :, :, :, 0])  # 原图每个通道
+        # Xdct = dct2(X[:, :, :, :, 0].float())  # 原图每个通道
         Xdct = self.dct_2d_module(X[:, :, :, :, 0])  # 7 ms
-
-        # Ydct = (dct2(L) + self.color_weight * Xdct) / self.param_total
+        #
+        # Ydct = (dct2(L.float()) + self.color_weight * Xdct) / self.param_total
         Ydct = (self.dct_2d_module(L) + self.color_weight * Xdct) / self.param_total
-
+        #
         # results = idct2(Ydct)  # 15 ms
-        results =self.idct_2d_module(Ydct)
+        results =self.idct_2d_module(Ydct).half()
 
         # results = results[:, [2, 1, 0], :, :]
         results = torch.clamp(results, min=-0, max=255)

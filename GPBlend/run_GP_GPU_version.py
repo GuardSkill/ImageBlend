@@ -7,6 +7,8 @@ import torch
 from skimage import img_as_float, img_as_int
 from skimage.io import imread, imsave
 import cv2
+
+from GPBlend.gp_model_convert import GPU_model_GP_MultiStage
 from gp_gan import GP_single_fusion
 from gp_model import GPU_model_GP
 from gp_pytorch import GP_GPU_fusion
@@ -90,6 +92,8 @@ def main():
     mask = imread(test_list[0][2], as_gray=True).astype(float)
     if args.invert_mask:
         mask = 1 - mask
+    # mask = cv2.resize(mask, (3840, 2160))
+    # mask = cv2.resize(mask, (960, 540))
     mask = ((mask) > 0.5).astype(np.uint8)
     # mask = ((mask) > 0.5).astype(np.uint8)
     kernel = np.ones((5, 5), np.uint8)
@@ -102,11 +106,16 @@ def main():
     args.gpu = 0
     total_size = len(test_list)
     if total_size > 1:
-        total_size = 40   # for test time
+        total_size = 40  # for test time
     T_init_model = time.time()
     gp_model = GPU_model_GP(img_shape=(1, 3, *mask.shape), color_weight=args.color_weight, gpu=args.gpu)
     for param in gp_model.infer_model.parameters():
         param.grad = None
+    # gp_model =GPU_model_GP_MultiStage(img_shape=(1, 3, *mask.shape), color_weight=args.color_weight, gpu=args.gpu)
+    # for param in gp_model.infer_model_T1.parameters():
+    #     param.grad = None
+    # for param in gp_model.infer_model_T2.parameters():
+    #     param.grad = None
     print('Init Time', time.time() - T_init_model, 's')
     T_infer = 0.0
     for idx in range(total_size):
